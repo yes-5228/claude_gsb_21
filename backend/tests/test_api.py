@@ -86,7 +86,8 @@ def test_inspection_scoring_and_filter(client, restroom):
 
     today = datetime.now().date().isoformat()
     ranged = client.get(
-        "/api/v1/inspections", params={"date_from": today, "date_to": today}
+        "/api/v1/inspections",
+        params={"date_from": today, "date_to": today, "restroom_id": restroom["id"]},
     ).json()
     assert ranged["meta"]["total"] == 2
 

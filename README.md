@@ -7,7 +7,8 @@
 | 模块 | 页面/入口 | 主要能力 |
 | --- | --- | --- |
 | 总览看板 | `/` | 核心指标卡、巡查与问题趋势、整改状态/分类/严重程度分布、区域运行情况、重点关注公厕、最新问题与巡查 |
-| 公厕台账 | `/restrooms`、`/restrooms/:id` | 台账增删改查、区域与状态筛选、公厕详情（档案 + 历史巡查 + 历史问题）、关联数据删除保护 |
+| 公厕台账 | `/restrooms`、`/restrooms/:id` | 台账增删改查、区域与状态筛选、公厕详情（档案 + 历史巡查 + 历史问题 + 谱系追溯）、关联数据删除保护 |
+| 合并拆分审批 | `/adjustments` | 公厕撤并/改造时的合并与拆分申请、审批、原子执行、原编号追溯、月度考核出具 |
 | 保洁巡查 | `/inspections` | 8 项检查项打分、自动折算百分制得分与等级、班次/日期/结论筛选、巡查详情、一键转问题上报 |
 | 问题上报 | `/issues`、`/issues/:id` | 问题上报（可关联巡查记录）、分类/程度/期限、整改流程流转、整改轨迹时间线、超期预警、追加跟进记录 |
 
@@ -27,9 +28,9 @@
 │   ├── app
 │   │   ├── api/v1/endpoints      # 路由层：restrooms / inspections / issues / stats / meta
 │   │   ├── core                 # 配置、数据库、业务常量、领域异常
-│   │   ├── models               # ORM 模型：公厕、巡查、问题、整改流水
+│   │   ├── models               # ORM 模型：公厕、巡查、问题、整改流水、合并拆分审批、谱系、月度考核
 │   │   ├── schemas              # Pydantic 出入参模型
-│   │   ├── services             # 业务规则层：台账、巡查、问题整改、评分、统计
+│   │   ├── services             # 业务规则层：台账、巡查、问题整改、合并拆分、评分、统计
 │   │   ├── seed.py              # 演示数据生成
 │   │   └── main.py              # 应用入口（含异常处理、CORS、健康检查）
 │   ├── tests                    # pytest 接口测试
@@ -40,7 +41,7 @@
 │   │   ├── api                  # 按资源拆分的接口封装 + 统一 fetch 客户端
 │   │   ├── components           # 通用组件：表格、分页、弹窗、标签、图表、时间线等
 │   │   ├── hooks                # useAsync / useListQuery / useDictionaries
-│   │   ├── pages                # dashboard / restrooms / inspections / issues 四个模块
+│   │   ├── pages                # dashboard / restrooms / adjustments / inspections / issues 五个模块
 │   │   ├── utils                # 时间格式化、评分换算
 │   │   └── styles/global.css
 │   ├── nginx.conf
@@ -137,6 +138,18 @@ npm run dev
 | GET | `/issues/{id}/transitions` | 当前状态可执行的流转动作 |
 | POST | `/issues/{id}/transitions` | 推进整改状态（越级流转返回 400） |
 | POST | `/issues/{id}/records` | 追加跟进记录（不改变状态） |
+| POST | `/restrooms/adjustments/merge` | 发起合并申请（一座并入另一座，须填依据） |
+| POST | `/restrooms/adjustments/split` | 发起拆分申请（新点位档案 + 勾选划归的未闭环问题/在办任务） |
+| GET | `/restrooms/adjustments` | 调整单列表（状态/类型/点位筛选） |
+| GET | `/restrooms/adjustments/{id}` | 调整单详情（来源数量、可划归问题、审批轨迹） |
+| POST | `/restrooms/adjustments/{id}/approve` | 审批通过并在同一事务原子执行归属变更 |
+| POST | `/restrooms/adjustments/{id}/reject` | 审批驳回（不产生任何数据变更） |
+| POST | `/restrooms/adjustments/{id}/cancel` | 撤销申请 |
+| GET | `/restrooms/adjustments/movable-issues` | 拆分候选：点位未闭环问题/在办任务 |
+| GET | `/restrooms/adjustments/lineage?code=` | 按原编号反查当前承接点位 |
+| GET | `/restrooms/{id}/lineage` | 点位谱系（原编号留痕与承接关系） |
+| GET | `/assessments` | 月度考核结果（冻结快照） |
+| POST | `/assessments/generate` | 生成/补齐月度考核（已出结果不覆盖、不重算） |
 | GET | `/stats/overview` | 核心指标 |
 | GET | `/stats/dashboard` | 看板聚合数据（趋势、分布、区域、排行、最新记录） |
 | GET | `/meta/dictionaries` | 枚举字典（状态、分类、程度、检查项、流转规则） |
@@ -150,6 +163,11 @@ npm run dev
 - **整改闭环**：`待整改 → 整改中 → 待验收 → 已完成 → 已关闭`；`待验证` 阶段可被驳回退回 `整改中`，`待整改/整改中` 可直接作废关闭。每次流转都会写入一条整改流水（动作、原状态、新状态、操作人、说明），详情页以时间线呈现。
 - **超期预警**：整改期限早于当前时间且状态仍处于未闭环（待整改/整改中/待验收）时，列表与详情页显示「已超期」，看板统计超期数量。
 - **删除保护**：删除公厕时若已存在巡查或问题记录，接口返回 409 并提示数量，需要显式 `force=true` 才会级联删除；前端会二次确认。
+- **合并撤并**：两座公厕须先提交调整单并说明依据，审批通过后在**同一事务**内把被撤并方的全部历史巡查、问题（含整改轨迹）整体归到承接方；被撤并方置为「已撤并」，原编号、原名称与归入数量写入谱系（`restroom_lineage`）永久留痕，可按原编号反查承接方。撤并后仍以原点位提交的巡查/问题自动落到承接方。
+- **拆出新点位**：审批通过后创建新点位；申请时逐条勾选划归的**未闭环问题/在办整改任务**，划转时在问题时间线追加「点位拆分划转」轨迹；历史巡查与已闭环记录保留在原点位。
+- **审批与原子性**：调整单状态为 待审批 → 已完成 / 已驳回 / 已撤销 / 执行失败；驳回、撤销不产生任何变更；执行中途异常时归属变更整体回滚，绝不存在记录只归一半的情况，并单独留失败原因。
+- **统计与考核口径**：看板等实时统计始终按记录**当前归属**即时重算（已撤并不再计入在用点位总数）；月度考核结果是按月冻结的快照，合并/拆分后既不覆盖也不重算历史结果。
+- **归属变更期的提交确定性**：调整执行与巡查/问题提交共用一组按点位 id 排序的应用级锁（PostgreSQL 再由行锁兜底多 worker），提交在锁内完成；变更前的提交归原点位并随后被整体带走，变更后的提交直接落到承接方，归属始终唯一确定。审批中的点位禁止再次发起调整、禁止删档。
 
 ## 演示数据
 
@@ -158,7 +176,7 @@ npm run dev
 ## 测试与验证
 
 ```bash
-cd backend && pytest -q          # 接口测试（覆盖台账 CRUD、删除保护、评分、流程流转、统计）
+cd backend && pytest -q          # 接口测试（覆盖台账 CRUD、删除保护、评分、流程流转、统计、合并/拆分/并发/回滚/考核冻结）
 cd frontend && npm run build     # 生产构建
 ```
 

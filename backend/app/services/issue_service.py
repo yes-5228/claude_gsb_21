@@ -14,7 +14,7 @@ from app.core.constants import (
 from app.core.exceptions import DomainError, NotFoundError
 from app.models import Inspection, Issue, RectificationRecord, Restroom
 from app.schemas.issue import IssueCreate, IssueOut, IssueStatusUpdate, IssueUpdate
-from app.services import restroom_service
+from app.services import adjustment_service, restroom_service
 
 SORTABLE_FIELDS = {
     "report_time": Issue.report_time,
@@ -135,35 +135,42 @@ def list_issues(
 
 
 def create_issue(db: Session, payload: IssueCreate) -> Issue:
-    restroom_service.get_restroom(db, payload.restroom_id)
-    if payload.inspection_id is not None:
-        inspection = db.get(Inspection, payload.inspection_id)
-        if inspection is None:
-            raise NotFoundError(f"巡查记录 {payload.inspection_id} 不存在")
-        if inspection.restroom_id != payload.restroom_id:
-            raise DomainError("关联的巡查记录与所选公厕不一致")
-
-    data = _values(payload.model_dump(exclude={"inspection_id", "report_time", "initial_remark"}))
-    issue = Issue(
-        code=_next_code(db),
-        inspection_id=payload.inspection_id,
-        report_time=payload.report_time or datetime.now(),
-        status=IssueStatus.PENDING.value,
-        **data,
-    )
-    issue.records.append(
-        RectificationRecord(
-            action="上报问题",
-            from_status="",
-            to_status=IssueStatus.PENDING.value,
-            operator=payload.reporter or "巡查员",
-            remark=payload.initial_remark or "巡查发现，等待派单整改",
+    data = _values(
+        payload.model_dump(
+            exclude={"restroom_id", "inspection_id", "report_time", "initial_remark"}
         )
     )
-    db.add(issue)
-    db.commit()
-    db.refresh(issue)
-    restroom_service.touch(db, issue.restroom_id)
+    # 与巡查提交相同的归属保障：在持有归属锁的事务内完成写入，
+    # 撤并点位的问题上报直接落到承接方。
+    with adjustment_service.restroom_write_target(db, payload.restroom_id) as restroom:
+        if payload.inspection_id is not None:
+            inspection = db.get(Inspection, payload.inspection_id)
+            if inspection is None:
+                raise NotFoundError(f"巡查记录 {payload.inspection_id} 不存在")
+            if inspection.restroom_id != restroom.id:
+                raise DomainError("关联的巡查记录与所选公厕不一致")
+
+        issue = Issue(
+            restroom_id=restroom.id,
+            code=_next_code(db),
+            inspection_id=payload.inspection_id,
+            report_time=payload.report_time or datetime.now(),
+            status=IssueStatus.PENDING.value,
+            **data,
+        )
+        issue.records.append(
+            RectificationRecord(
+                action="上报问题",
+                from_status="",
+                to_status=IssueStatus.PENDING.value,
+                operator=payload.reporter or "巡查员",
+                remark=payload.initial_remark or "巡查发现，等待派单整改",
+            )
+        )
+        db.add(issue)
+        db.commit()
+        db.refresh(issue)
+        restroom_service.touch(db, restroom.id)
     return issue
 
 

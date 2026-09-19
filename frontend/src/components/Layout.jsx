@@ -5,6 +5,7 @@ import ToastProvider from './Toast.jsx';
 const NAV_ITEMS = [
   { to: '/', label: '总览看板', icon: '📊', end: true },
   { to: '/restrooms', label: '公厕台账', icon: '🏛️' },
+  { to: '/adjustments', label: '合并拆分审批', icon: '🔀' },
   { to: '/inspections', label: '保洁巡查', icon: '🧹' },
   { to: '/issues', label: '问题整改', icon: '🛠️' },
 ];

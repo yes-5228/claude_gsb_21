@@ -77,3 +77,7 @@ class RestroomDetail(RestroomOut):
     avg_score: float | None = None
     open_issue_count: int = 0
     total_issue_count: int = 0
+    current_restroom: RestroomBrief | None = Field(
+        default=None, description="已撤并点位当前的承接方"
+    )
+    lineage: list[dict] = Field(default_factory=list, description="点位谱系/原编号留痕")

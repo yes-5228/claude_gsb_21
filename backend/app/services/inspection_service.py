@@ -5,10 +5,11 @@ from datetime import date, datetime, time
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.constants import RestroomStatus
 from app.core.exceptions import DomainError, NotFoundError
 from app.models import Inspection, Restroom
 from app.schemas.inspection import InspectionCreate, InspectionOut, InspectionUpdate
-from app.services import restroom_service, scoring
+from app.services import adjustment_service, restroom_service, scoring
 
 SORTABLE_FIELDS = {
     "inspect_time": Inspection.inspect_time,
@@ -101,24 +102,26 @@ def list_inspections(
 
 
 def create_inspection(db: Session, payload: InspectionCreate) -> Inspection:
-    restroom_service.get_restroom(db, payload.restroom_id)
     items = _normalize_items(payload.items)
     score, grade, result = scoring.evaluate(items)
-    inspection = Inspection(
-        restroom_id=payload.restroom_id,
-        inspector=payload.inspector,
-        shift=payload.shift.value if hasattr(payload.shift, "value") else payload.shift,
-        inspect_time=payload.inspect_time or datetime.now(),
-        items=items,
-        score=score,
-        grade=grade,
-        result=result,
-        remark=payload.remark,
-    )
-    db.add(inspection)
-    db.commit()
-    db.refresh(inspection)
-    restroom_service.touch(db, payload.restroom_id)
+    # 归属变更期间的提交保障：在持有归属锁的事务内完成写入与提交，
+    # 点位已撤并时沿谱系落到确定的承接方，不会出现归属未定的巡查。
+    with adjustment_service.restroom_write_target(db, payload.restroom_id) as restroom:
+        inspection = Inspection(
+            restroom_id=restroom.id,
+            inspector=payload.inspector,
+            shift=payload.shift.value if hasattr(payload.shift, "value") else payload.shift,
+            inspect_time=payload.inspect_time or datetime.now(),
+            items=items,
+            score=score,
+            grade=grade,
+            result=result,
+            remark=payload.remark,
+        )
+        db.add(inspection)
+        db.commit()
+        db.refresh(inspection)
+        restroom_service.touch(db, restroom.id)
     return inspection
 
 
@@ -152,7 +155,7 @@ def delete_inspection(db: Session, inspection_id: int) -> None:
 
 
 def restroom_options(db: Session, keyword: str | None = None, limit: int = 50) -> list[Restroom]:
-    stmt = select(Restroom).order_by(Restroom.code)
+    stmt = select(Restroom).where(Restroom.status != RestroomStatus.MERGED.value).order_by(Restroom.code)
     if keyword:
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(Restroom.name.like(like), Restroom.code.like(like)))

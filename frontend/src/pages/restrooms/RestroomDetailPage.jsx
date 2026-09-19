@@ -12,18 +12,23 @@ import { ScorePill, SeverityTag, StatusTag } from '../../components/Tags.jsx';
 import { useAsync } from '../../hooks/useAsync.js';
 import { useListQuery } from '../../hooks/useListQuery.js';
 import { formatDateTime } from '../../utils/format.js';
+import MergeApplyModal from './MergeApplyModal.jsx';
 import RestroomFormModal from './RestroomFormModal.jsx';
+import SplitApplyModal from './SplitApplyModal.jsx';
 
 const TABS = [
   { key: 'profile', label: '基础档案' },
   { key: 'inspections', label: '巡查记录' },
   { key: 'issues', label: '问题记录' },
+  { key: 'lineage', label: '谱系追溯' },
 ];
 
 export default function RestroomDetailPage() {
   const { restroomId } = useParams();
   const [tab, setTab] = useState('profile');
   const [showForm, setShowForm] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
 
   const { data: restroom, loading, error, reload } = useAsync(
     () => restroomApi.detail(restroomId),
@@ -40,6 +45,8 @@ export default function RestroomDetailPage() {
     5,
   );
 
+  const merged = restroom?.status === '已撤并';
+
   return (
     <>
       <PageHeader
@@ -50,9 +57,19 @@ export default function RestroomDetailPage() {
             <Link className="btn" to="/restrooms">
               返回列表
             </Link>
-            <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
-              编辑档案
-            </button>
+            {restroom && !merged ? (
+              <>
+                <button type="button" className="btn" onClick={() => setShowForm(true)}>
+                  编辑档案
+                </button>
+                <button type="button" className="btn" onClick={() => setShowSplit(true)}>
+                  拆出新点位
+                </button>
+                <button type="button" className="btn btn-danger" onClick={() => setShowMerge(true)}>
+                  合并撤并
+                </button>
+              </>
+            ) : null}
           </>
         }
       />
@@ -62,6 +79,22 @@ export default function RestroomDetailPage() {
 
         {restroom ? (
           <>
+            {merged ? (
+              <div className="alert alert-warning">
+                该点位已于撤并整合后停用，档案与原编号
+                <strong> {restroom.code} </strong>
+                保留用于追溯。当前承接方：
+                {restroom.current_restroom ? (
+                  <Link to={`/restrooms/${restroom.current_restroom.id}`}>
+                    {restroom.current_restroom.code} {restroom.current_restroom.name}
+                  </Link>
+                ) : (
+                  '缺失，请核查谱系'
+                )}
+                。撤并后新提交的巡查/问题会自动落到承接方。
+              </div>
+            ) : null}
+
             <div className="stat-grid">
               <div className="stat-card">
                 <div className="label">累计巡查</div>
@@ -188,16 +221,66 @@ export default function RestroomDetailPage() {
                 <Pagination meta={issues.meta} onPageChange={issues.setPage} />
               </section>
             ) : null}
+
+            {tab === 'lineage' ? (
+              <section className="card">
+                <div className="card-title">
+                  <h3>谱系与原编号留痕</h3>
+                  <Link className="hint" to="/adjustments">
+                    前往合并拆分审批 →
+                  </Link>
+                </div>
+                {restroom.lineage?.length ? (
+                  <DataTable
+                    rows={restroom.lineage}
+                    emptyText="无谱系记录"
+                    columns={[
+                      {
+                        key: 'relation',
+                        title: '关系',
+                        render: (row) =>
+                          row.relation === 'merged_into' ? (
+                            <span className="tag tag-info">原编号并入</span>
+                          ) : (
+                            <span className="tag tag-primary">拆出新点位</span>
+                          ),
+                      },
+                      { key: 'original_code', title: '原编号' },
+                      { key: 'original_name', title: '原名称', wrap: true },
+                      {
+                        key: 'current',
+                        title: '当前点位',
+                        render: (row) =>
+                          row.current_restroom ? (
+                            <Link to={`/restrooms/${row.current_restroom.id}`}>
+                              {row.current_restroom.code} {row.current_restroom.name}
+                            </Link>
+                          ) : (
+                            row.current_restroom_id
+                          ),
+                      },
+                      { key: 'moved_inspection_count', title: '归入巡查' },
+                      { key: 'moved_issue_count', title: '归入/划归问题' },
+                      { key: 'created_at', title: '变更时间', render: (row) => formatDateTime(row.created_at) },
+                    ]}
+                  />
+                ) : (
+                  <div className="empty-block">该点位暂无合并/拆分谱系记录。</div>
+                )}
+              </section>
+            ) : null}
           </>
         ) : null}
       </div>
 
       {showForm && restroom ? (
-        <RestroomFormModal
-          restroom={restroom}
-          onClose={() => setShowForm(false)}
-          onSaved={reload}
-        />
+        <RestroomFormModal restroom={restroom} onClose={() => setShowForm(false)} onSaved={reload} />
+      ) : null}
+      {showMerge && restroom ? (
+        <MergeApplyModal restroom={restroom} onClose={() => setShowMerge(false)} onSubmitted={reload} />
+      ) : null}
+      {showSplit && restroom ? (
+        <SplitApplyModal restroom={restroom} onClose={() => setShowSplit(false)} onSubmitted={reload} />
       ) : null}
     </>
   );

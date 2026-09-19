@@ -7,6 +7,28 @@ class RestroomStatus(StrEnum):
     NORMAL = "正常开放"
     MAINTENANCE = "维修中"
     CLOSED = "暂停使用"
+    MERGED = "已撤并"
+
+
+class AdjustmentType(StrEnum):
+    """台账归属调整类型。"""
+
+    MERGE = "合并"
+    SPLIT = "拆分"
+
+
+class AdjustmentStatus(StrEnum):
+    """合并/拆分审批单状态。
+
+    审批通过即在同一事务内完成执行，因此不存在“已通过未执行”的中间态；
+    执行整体回滚时单独落到 FAILED，记录失败原因供再次申请参考。
+    """
+
+    PENDING = "待审批"
+    COMPLETED = "已完成"
+    REJECTED = "已驳回"
+    CANCELLED = "已撤销"
+    FAILED = "执行失败"
 
 
 class RestroomGrade(StrEnum):

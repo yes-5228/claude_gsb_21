@@ -36,6 +36,7 @@ export const STATUS_TONES = {
   正常开放: 'tag-success',
   维修中: 'tag-warning',
   暂停使用: 'tag-neutral',
+  已撤并: 'tag-danger',
   待整改: 'tag-danger',
   整改中: 'tag-warning',
   待验收: 'tag-info',

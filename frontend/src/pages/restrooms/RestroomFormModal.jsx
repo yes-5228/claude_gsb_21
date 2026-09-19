@@ -110,9 +110,11 @@ export default function RestroomFormModal({ restroom, onClose, onSaved }) {
         </Field>
         <Field label="开放状态">
           <select value={form.status} onChange={setValue('status')}>
-            {(dictionaries?.restroom_status || ['正常开放', '维修中', '暂停使用']).map((item) => (
-              <option key={item}>{item}</option>
-            ))}
+            {(dictionaries?.restroom_status || ['正常开放', '维修中', '暂停使用'])
+              .filter((item) => item !== '已撤并')
+              .map((item) => (
+                <option key={item}>{item}</option>
+              ))}
           </select>
         </Field>
         <Field label="开放时间">

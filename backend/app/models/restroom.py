@@ -45,3 +45,8 @@ class Restroom(Base):
     issues: Mapped[list["Issue"]] = relationship(  # noqa: F821
         back_populates="restroom", cascade="all, delete-orphan"
     )
+    lineage_links: Mapped[list["RestroomLineage"]] = relationship(  # noqa: F821
+        foreign_keys="RestroomLineage.current_restroom_id",
+        primaryjoin="Restroom.id == RestroomLineage.current_restroom_id",
+        viewonly=True,
+    )
