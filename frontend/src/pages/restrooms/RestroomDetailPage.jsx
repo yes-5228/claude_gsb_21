@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
+import { assessmentApi } from '../../api/assessments.js';
 import { inspectionApi } from '../../api/inspections.js';
 import { issueApi } from '../../api/issues.js';
 import { restroomApi } from '../../api/restrooms.js';
@@ -12,18 +13,25 @@ import { ScorePill, SeverityTag, StatusTag } from '../../components/Tags.jsx';
 import { useAsync } from '../../hooks/useAsync.js';
 import { useListQuery } from '../../hooks/useListQuery.js';
 import { formatDateTime } from '../../utils/format.js';
+import IssueAssessmentModal, { AssessmentTag } from '../assessments/IssueAssessmentModal.jsx';
+import MergeOrderModal from '../changes/MergeOrderModal.jsx';
+import SplitOrderModal from '../changes/SplitOrderModal.jsx';
 import RestroomFormModal from './RestroomFormModal.jsx';
 
 const TABS = [
   { key: 'profile', label: '基础档案' },
   { key: 'inspections', label: '巡查记录' },
   { key: 'issues', label: '问题记录' },
+  { key: 'assessments', label: '月度考核' },
 ];
 
 export default function RestroomDetailPage() {
   const { restroomId } = useParams();
   const [tab, setTab] = useState('profile');
   const [showForm, setShowForm] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
+  const [showAssessment, setShowAssessment] = useState(false);
 
   const { data: restroom, loading, error, reload } = useAsync(
     () => restroomApi.detail(restroomId),
@@ -39,6 +47,12 @@ export default function RestroomDetailPage() {
     {},
     5,
   );
+  const {
+    data: assessments,
+    reload: reloadAssessments,
+  } = useAsync(() => assessmentApi.list({ restroom_id: restroomId }), [restroomId]);
+
+  const isMerged = restroom?.status === '已撤并';
 
   return (
     <>
@@ -53,12 +67,40 @@ export default function RestroomDetailPage() {
             <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
               编辑档案
             </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowMerge(true)}
+              disabled={isMerged}
+              title={isMerged ? '该公厕已撤并' : ''}
+            >
+              发起合并
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowSplit(true)}
+              disabled={isMerged}
+              title={isMerged ? '该公厕已撤并' : ''}
+            >
+              发起拆分
+            </button>
           </>
         }
       />
       <div className="content">
         {error ? <div className="alert alert-error">{error.message}</div> : null}
         {loading && !restroom ? <div className="loading-block">加载中…</div> : null}
+
+        {isMerged && restroom.merged_into ? (
+          <div className="alert alert-warning">
+            该公厕已于 {formatDateTime(restroom.merged_at)} 撤并，巡查、问题与考核记录已整体归到承接公厕
+            <Link to={`/restrooms/${restroom.merged_into.id}`}>
+              「{restroom.merged_into.name}」（{restroom.merged_into.code}）
+            </Link>
+            。本页保留原编号与台账信息用于追溯，不能再向该公厕提交巡查或问题。
+          </div>
+        ) : null}
 
         {restroom ? (
           <>
@@ -146,6 +188,18 @@ export default function RestroomDetailPage() {
                   rows={inspections.items}
                   emptyText="该公厕暂无巡查记录"
                   columns={[
+                    {
+                      key: 'origin',
+                      title: '来源',
+                      render: (row) =>
+                        row.origin_restroom_code ? (
+                          <span className="tag tag-neutral" title="记录原始所属公厕">
+                            原 {row.origin_restroom_code}
+                          </span>
+                        ) : (
+                          <span className="muted">本厕</span>
+                        ),
+                    },
                     { key: 'inspect_time', title: '巡查时间', render: (row) => formatDateTime(row.inspect_time) },
                     { key: 'inspector', title: '巡查人' },
                     { key: 'shift', title: '班次' },
@@ -174,6 +228,18 @@ export default function RestroomDetailPage() {
                   columns={[
                     { key: 'code', title: '编号' },
                     {
+                      key: 'origin',
+                      title: '来源',
+                      render: (row) =>
+                        row.origin_restroom_code ? (
+                          <span className="tag tag-neutral" title="问题原始上报公厕">
+                            原 {row.origin_restroom_code}
+                          </span>
+                        ) : (
+                          <span className="muted">本厕</span>
+                        ),
+                    },
+                    {
                       key: 'title',
                       title: '问题',
                       wrap: true,
@@ -188,6 +254,62 @@ export default function RestroomDetailPage() {
                 <Pagination meta={issues.meta} onPageChange={issues.setPage} />
               </section>
             ) : null}
+
+            {tab === 'assessments' ? (
+              <section className="card">
+                <div className="card-title">
+                  <h3>月度考核结果</h3>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => setShowAssessment(true)}
+                    disabled={isMerged}
+                  >
+                    出具月度考核
+                  </button>
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>考核月份</th>
+                        <th>等次</th>
+                        <th>巡查次数</th>
+                        <th>均分</th>
+                        <th>问题数</th>
+                        <th>未闭环</th>
+                        <th>出具人</th>
+                        <th>出具时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(assessments || []).map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.period}</td>
+                          <td><AssessmentTag row={row} /></td>
+                          <td>{row.inspection_count}</td>
+                          <td>{Number(row.avg_score).toFixed(1)}</td>
+                          <td>{row.issue_total}</td>
+                          <td>{row.issue_open}</td>
+                          <td>{row.issued_by || '-'}</td>
+                          <td>{formatDateTime(row.issued_at)}</td>
+                        </tr>
+                      ))}
+                      {assessments && assessments.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 20 }}>
+                            尚未出具月度考核
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                  考核结果出具后即冻结：拆分时已出具月份的结果保留在原公厕、不重算不迁移；合并时随记录归到承接方并保留原编号。
+                </p>
+              </section>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -197,6 +319,27 @@ export default function RestroomDetailPage() {
           restroom={restroom}
           onClose={() => setShowForm(false)}
           onSaved={reload}
+        />
+      ) : null}
+      {showMerge && restroom ? (
+        <MergeOrderModal
+          source={restroom}
+          onClose={() => setShowMerge(false)}
+          onCreated={() => reload()}
+        />
+      ) : null}
+      {showSplit && restroom ? (
+        <SplitOrderModal
+          source={restroom}
+          onClose={() => setShowSplit(false)}
+          onCreated={() => reload()}
+        />
+      ) : null}
+      {showAssessment && restroom ? (
+        <IssueAssessmentModal
+          restroomId={restroom.id}
+          onClose={() => setShowAssessment(false)}
+          onIssued={reloadAssessments}
         />
       ) : null}
     </>

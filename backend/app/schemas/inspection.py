@@ -61,3 +61,5 @@ class InspectionOut(BaseModel):
     remark: str | None = None
     created_at: datetime
     issue_count: int = 0
+    origin_restroom_id: int | None = None
+    origin_restroom_code: str | None = None

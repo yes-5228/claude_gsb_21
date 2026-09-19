@@ -7,6 +7,7 @@ class RestroomStatus(StrEnum):
     NORMAL = "正常开放"
     MAINTENANCE = "维修中"
     CLOSED = "暂停使用"
+    MERGED = "已撤并"
 
 
 class RestroomGrade(StrEnum):
@@ -97,3 +98,27 @@ OPEN_ISSUE_STATUSES: list[str] = [
 
 # 单检查项低于该分数视为不合格项
 INSPECTION_ITEM_PROBLEM_THRESHOLD = 6
+
+
+class ChangeType(StrEnum):
+    """台账变更类型。"""
+
+    MERGE = "merge"
+    SPLIT = "split"
+
+
+class ChangeOrderStatus(StrEnum):
+    """变更单审批状态。"""
+
+    DRAFT = "草稿"
+    PENDING = "待审批"
+    APPROVED = "已执行"
+    REJECTED = "已驳回"
+    REVOKED = "已撤销"
+
+
+# 变更单仍可被审批/撤销（即尚未执行落库）的状态
+ACTIVE_CHANGE_STATUSES: list[str] = [ChangeOrderStatus.DRAFT.value, ChangeOrderStatus.PENDING.value]
+
+# 已执行成功的变更单状态
+EXECUTED_CHANGE_STATUS: str = ChangeOrderStatus.APPROVED.value

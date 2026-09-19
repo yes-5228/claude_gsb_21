@@ -135,7 +135,8 @@ def list_issues(
 
 
 def create_issue(db: Session, payload: IssueCreate) -> Issue:
-    restroom_service.get_restroom(db, payload.restroom_id)
+    # 加行锁：与合并/拆分执行互斥，撤并后的公厕拒绝上报并引导到承接方
+    restroom_service.require_active_restroom(db, payload.restroom_id)
     if payload.inspection_id is not None:
         inspection = db.get(Inspection, payload.inspection_id)
         if inspection is None:
@@ -161,9 +162,9 @@ def create_issue(db: Session, payload: IssueCreate) -> Issue:
         )
     )
     db.add(issue)
+    restroom_service.touch(db, issue.restroom_id)
     db.commit()
     db.refresh(issue)
-    restroom_service.touch(db, issue.restroom_id)
     return issue
 
 
@@ -212,9 +213,9 @@ def change_status(db: Session, issue_id: int, payload: IssueStatusUpdate) -> Iss
             remark=payload.remark,
         )
     )
+    restroom_service.touch(db, issue.restroom_id)
     db.commit()
     db.refresh(issue)
-    restroom_service.touch(db, issue.restroom_id)
     return issue
 
 

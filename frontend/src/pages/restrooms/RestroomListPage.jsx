@@ -11,6 +11,8 @@ import { useToast } from '../../components/Toast.jsx';
 import { useAsync } from '../../hooks/useAsync.js';
 import { useDictionaries } from '../../hooks/useDictionaries.js';
 import { useListQuery } from '../../hooks/useListQuery.js';
+import MergeOrderModal from '../changes/MergeOrderModal.jsx';
+import SplitOrderModal from '../changes/SplitOrderModal.jsx';
 import RestroomFormModal from './RestroomFormModal.jsx';
 
 const DEFAULT_FILTERS = { keyword: '', district: '', status: '', grade: '' };
@@ -20,6 +22,8 @@ export default function RestroomListPage() {
   const toast = useToast();
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [mergeSource, setMergeSource] = useState(null);
+  const [splitSource, setSplitSource] = useState(null);
 
   const list = useListQuery((params) => restroomApi.list(params), DEFAULT_FILTERS, 10);
   const { data: districts } = useAsync(() => restroomApi.districts(), []);
@@ -47,16 +51,21 @@ export default function RestroomListPage() {
         title="公厕台账"
         description="维护全市公厕基础档案、责任人与设施配置"
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              setEditing(null);
-              setShowForm(true);
-            }}
-          >
-            + 新增公厕
-          </button>
+          <>
+            <Link className="btn" to="/change-orders">
+              合并/拆分审批
+            </Link>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setEditing(null);
+                setShowForm(true);
+              }}
+            >
+              + 新增公厕
+            </button>
+          </>
         }
       />
       <div className="content">
@@ -150,6 +159,20 @@ export default function RestroomListPage() {
                     >
                       编辑
                     </button>
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => setMergeSource(row)}
+                    >
+                      合并
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => setSplitSource(row)}
+                    >
+                      拆分
+                    </button>
                     <button type="button" className="btn-link danger" onClick={() => remove(row)}>
                       删除
                     </button>
@@ -167,6 +190,20 @@ export default function RestroomListPage() {
           restroom={editing}
           onClose={() => setShowForm(false)}
           onSaved={list.reload}
+        />
+      ) : null}
+      {mergeSource ? (
+        <MergeOrderModal
+          source={mergeSource}
+          onClose={() => setMergeSource(null)}
+          onCreated={list.reload}
+        />
+      ) : null}
+      {splitSource ? (
+        <SplitOrderModal
+          source={splitSource}
+          onClose={() => setSplitSource(null)}
+          onCreated={list.reload}
         />
       ) : null}
     </>

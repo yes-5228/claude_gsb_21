@@ -30,6 +30,7 @@ def list_restrooms(
     grade: Annotated[str | None, Query(description="公厕等级")] = None,
     sort_by: Annotated[str, Query(description="排序字段")] = "created_at",
     order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
+    include_merged: Annotated[bool, Query(description="是否包含已撤并公厕")] = False,
 ) -> Page[RestroomOut]:
     rows, total = restroom_service.list_restrooms(
         db,
@@ -41,6 +42,7 @@ def list_restrooms(
         page_size=pagination.page_size,
         sort_by=sort_by,
         order=order,
+        include_merged=include_merged,
     )
     return Page[RestroomOut](
         items=[RestroomOut.model_validate(row) for row in rows],

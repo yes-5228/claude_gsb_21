@@ -558,6 +558,11 @@ table.data-table td.wrap {
   color: #1e40af;
 }
 
+.alert-warning {
+  background: var(--warning-soft);
+  color: #92400e;
+}
+
 .toast {
   position: fixed;
   right: 24px;

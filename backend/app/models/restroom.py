@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.constants import RestroomGrade, RestroomStatus
@@ -38,10 +38,21 @@ class Restroom(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间"
     )
+    merged_into_id: Mapped[int | None] = mapped_column(
+        ForeignKey("restrooms.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="撤并后的承接公厕；仅状态为已撤并时有值",
+    )
+    merged_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="撤并生效时间"
+    )
 
     inspections: Mapped[list["Inspection"]] = relationship(  # noqa: F821
-        back_populates="restroom", cascade="all, delete-orphan"
+        back_populates="restroom", cascade="all, delete-orphan",
+        foreign_keys="Inspection.restroom_id",
     )
     issues: Mapped[list["Issue"]] = relationship(  # noqa: F821
-        back_populates="restroom", cascade="all, delete-orphan"
+        back_populates="restroom", cascade="all, delete-orphan",
+        foreign_keys="Issue.restroom_id",
     )

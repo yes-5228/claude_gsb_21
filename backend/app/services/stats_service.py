@@ -52,7 +52,7 @@ def overview(db: Session) -> OverviewStats:
     finished = done_count + closed_count
 
     return OverviewStats(
-        restroom_total=_count(db, Restroom),
+        restroom_total=_count(db, Restroom, Restroom.status != RestroomStatus.MERGED.value),
         restroom_open=_count(db, Restroom, Restroom.status == RestroomStatus.NORMAL.value),
         restroom_maintenance=_count(db, Restroom, Restroom.status == RestroomStatus.MAINTENANCE.value),
         inspection_total=_count(db, Inspection),
@@ -159,7 +159,9 @@ def inspection_trend(db: Session, days: int = 14) -> list[TrendPoint]:
 
 def district_stats(db: Session) -> list[DistrictStat]:
     restroom_rows = db.execute(
-        select(Restroom.district, func.count()).group_by(Restroom.district)
+        select(Restroom.district, func.count())
+        .where(Restroom.status != RestroomStatus.MERGED.value)
+        .group_by(Restroom.district)
     ).all()
     counts = {district: int(count) for district, count in restroom_rows}
     open_rows = db.execute(
@@ -210,7 +212,9 @@ def restroom_ranking(db: Session, limit: int = 8) -> list[RestroomRankItem]:
     opens = {rid: int(count) for rid, count in open_rows}
 
     ranking: list[RestroomRankItem] = []
-    for restroom in db.scalars(select(Restroom)):
+    for restroom in db.scalars(
+        select(Restroom).where(Restroom.status != RestroomStatus.MERGED.value)
+    ):
         stat = stats.get(restroom.id, {"count": 0, "avg": 0.0})
         ranking.append(
             RestroomRankItem(

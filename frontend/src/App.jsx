@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import Layout from './components/Layout.jsx';
+import ChangeOrderListPage from './pages/changes/ChangeOrderListPage.jsx';
 import DashboardPage from './pages/dashboard/DashboardPage.jsx';
 import InspectionListPage from './pages/inspections/InspectionListPage.jsx';
 import IssueDetailPage from './pages/issues/IssueDetailPage.jsx';
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/restrooms" element={<RestroomListPage />} />
         <Route path="/restrooms/:restroomId" element={<RestroomDetailPage />} />
+        <Route path="/change-orders" element={<ChangeOrderListPage />} />
         <Route path="/inspections" element={<InspectionListPage />} />
         <Route path="/issues" element={<IssueListPage />} />
         <Route path="/issues/:issueId" element={<IssueDetailPage />} />

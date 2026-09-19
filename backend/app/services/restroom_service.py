@@ -5,10 +5,16 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.constants import OPEN_ISSUE_STATUSES
+from app.core.constants import OPEN_ISSUE_STATUSES, ChangeOrderStatus, RestroomStatus
 from app.core.exceptions import ConflictError, DomainError, NotFoundError
-from app.models import Inspection, Issue, Restroom
-from app.schemas.restroom import RestroomCreate, RestroomDetail, RestroomOut, RestroomUpdate
+from app.models import Inspection, Issue, Restroom, RestroomChangeOrder
+from app.schemas.restroom import (
+    RestroomBrief,
+    RestroomCreate,
+    RestroomDetail,
+    RestroomOut,
+    RestroomUpdate,
+)
 
 SORTABLE_FIELDS = {
     "code": Restroom.code,
@@ -29,10 +35,41 @@ def _next_code(db: Session) -> str:
         seq += 1
 
 
+def next_available_code(db: Session) -> str:
+    """对外暴露的公厕编号生成（如拆分新点位建档时使用）。"""
+    return _next_code(db)
+
+
 def get_restroom(db: Session, restroom_id: int) -> Restroom:
     restroom = db.get(Restroom, restroom_id)
     if restroom is None:
         raise NotFoundError(f"公厕 {restroom_id} 不存在")
+    return restroom
+
+
+def lock_restroom(db: Session, restroom_id: int) -> Restroom:
+    """按主键加行锁取公厕，用于「归属变更」与「巡查/问题提交」互斥。
+
+    PostgreSQL 下为 SELECT ... FOR UPDATE；SQLite 无行锁，靠单写连接串行化。
+    必须处于事务中调用。
+    """
+    restroom = db.scalar(select(Restroom).where(Restroom.id == restroom_id).with_for_update())
+    if restroom is None:
+        raise NotFoundError(f"公厕 {restroom_id} 不存在")
+    return restroom
+
+
+def require_active_restroom(db: Session, restroom_id: int) -> Restroom:
+    """加行锁并校验公厕可接收巡查/问题；已撤并的公厕拒绝并指明承接方。"""
+    restroom = lock_restroom(db, restroom_id)
+    if restroom.status == RestroomStatus.MERGED.value:
+        target = restroom.merged_into_id
+        hint = ""
+        if target:
+            successor = db.get(Restroom, target)
+            if successor:
+                hint = f"，请提交到承接公厕「{successor.name}」（{successor.code}）"
+        raise ConflictError(f"公厕「{restroom.name}」（{restroom.code}）已撤并{hint}")
     return restroom
 
 
@@ -47,8 +84,11 @@ def list_restrooms(
     page_size: int = 10,
     sort_by: str = "created_at",
     order: str = "desc",
+    include_merged: bool = False,
 ) -> tuple[list[Restroom], int]:
     stmt = select(Restroom)
+    if not include_merged:
+        stmt = stmt.where(Restroom.status != RestroomStatus.MERGED.value)
     if keyword:
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(
@@ -92,7 +132,11 @@ def create_restroom(db: Session, payload: RestroomCreate) -> Restroom:
 
 def update_restroom(db: Session, restroom_id: int, payload: RestroomUpdate) -> Restroom:
     restroom = get_restroom(db, restroom_id)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if restroom.status == RestroomStatus.MERGED.value:
+        # 已撤并公厕仅保留台账追溯，不允许再改档案/状态
+        raise ConflictError("该公厕已撤并，档案已封存，不能编辑；如需恢复请先处理承接关系")
+    for key, value in changes.items():
         setattr(restroom, key, value.value if hasattr(value, "value") else value)
     db.commit()
     db.refresh(restroom)
@@ -100,7 +144,19 @@ def update_restroom(db: Session, restroom_id: int, payload: RestroomUpdate) -> R
 
 
 def delete_restroom(db: Session, restroom_id: int, *, force: bool = False) -> None:
-    restroom = get_restroom(db, restroom_id)
+    # 加行锁，与合并/拆分执行互斥；持锁后复查状态，防止并发撤并时误删
+    restroom = lock_restroom(db, restroom_id)
+    if restroom.status == RestroomStatus.MERGED.value:
+        raise ConflictError("该公厕已撤并，撤并台账需保留用于追溯，不能删除")
+    pending_order = db.scalar(
+        select(RestroomChangeOrder.id).where(
+            RestroomChangeOrder.status == ChangeOrderStatus.PENDING.value,
+            (RestroomChangeOrder.source_restroom_id == restroom_id)
+            | (RestroomChangeOrder.target_restroom_id == restroom_id),
+        )
+    )
+    if pending_order:
+        raise ConflictError("该公厕存在进行中的合并/拆分变更单，请先完成或撤销后再删除")
     inspection_count = db.scalar(
         select(func.count()).select_from(Inspection).where(Inspection.restroom_id == restroom_id)
     ) or 0
@@ -140,6 +196,11 @@ def get_restroom_detail(db: Session, restroom_id: int) -> RestroomDetail:
     ) or 0
 
     base = RestroomOut.model_validate(restroom).model_dump()
+    merged_into = None
+    if restroom.merged_into_id:
+        successor = db.get(Restroom, restroom.merged_into_id)
+        if successor:
+            merged_into = RestroomBrief.model_validate(successor)
     return RestroomDetail(
         **base,
         inspection_count=inspection_count,
@@ -148,12 +209,14 @@ def get_restroom_detail(db: Session, restroom_id: int) -> RestroomDetail:
         avg_score=round(float(avg_score), 1) if avg_score is not None else None,
         open_issue_count=open_issue_count,
         total_issue_count=total_issue_count,
+        merged_into=merged_into,
     )
 
 
 def touch(db: Session, restroom_id: int) -> None:
-    """巡查或问题变更后刷新台账更新时间。"""
-    restroom = db.get(Restroom, restroom_id)
-    if restroom is not None:
-        restroom.updated_at = datetime.now()
-        db.commit()
+    """巡查或问题变更后刷新台账更新时间（在调用方事务内执行，不单独提交）。"""
+    db.execute(
+        Restroom.__table__.update()
+        .where(Restroom.id == restroom_id)
+        .values(updated_at=datetime.now())
+    )

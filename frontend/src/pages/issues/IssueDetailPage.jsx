@@ -126,6 +126,12 @@ export default function IssueDetailPage() {
                       '-'
                     ),
                   },
+                  {
+                    label: '原始所属公厕',
+                    value: issue.origin_restroom_code
+                      ? `${issue.origin_restroom_code}（撤并/拆分前编号，备查）`
+                      : '与当前归属一致',
+                  },
                   { label: '问题分类', value: issue.category },
                   {
                     label: '上报人 / 时间',

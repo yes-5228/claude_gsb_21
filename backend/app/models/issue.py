@@ -46,9 +46,20 @@ class Issue(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.now, onupdate=datetime.now
     )
+    # 原始归属：问题最初上报于哪座公厕；合并/拆分后 restroom_id 指向当前归属，原编号留此追溯
+    origin_restroom_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True, comment="问题原始所属公厕ID（追溯用）"
+    )
+    origin_restroom_code: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="问题原始所属公厕编号（追溯用）"
+    )
 
-    restroom: Mapped["Restroom"] = relationship(back_populates="issues")  # noqa: F821
-    inspection: Mapped["Inspection | None"] = relationship(back_populates="issues")  # noqa: F821
+    restroom: Mapped["Restroom"] = relationship(  # noqa: F821
+        back_populates="issues", foreign_keys=[restroom_id]
+    )
+    inspection: Mapped["Inspection | None"] = relationship(  # noqa: F821
+        back_populates="issues", foreign_keys=[inspection_id]
+    )
     records: Mapped[list["RectificationRecord"]] = relationship(
         back_populates="issue",
         cascade="all, delete-orphan",

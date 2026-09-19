@@ -32,6 +32,17 @@ class Inspection(Base):
     )
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, comment="巡查备注")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    # 原始归属：记录最初属于哪座公厕；合并/拆分后 restroom_id 指向当前归属，原编号留此追溯
+    origin_restroom_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True, comment="记录原始所属公厕ID（追溯用）"
+    )
+    origin_restroom_code: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="记录原始所属公厕编号（追溯用）"
+    )
 
-    restroom: Mapped["Restroom"] = relationship(back_populates="inspections")  # noqa: F821
-    issues: Mapped[list["Issue"]] = relationship(back_populates="inspection")  # noqa: F821
+    restroom: Mapped["Restroom"] = relationship(  # noqa: F821
+        back_populates="inspections", foreign_keys=[restroom_id]
+    )
+    issues: Mapped[list["Issue"]] = relationship(  # noqa: F821
+        back_populates="inspection", foreign_keys="Issue.inspection_id"
+    )

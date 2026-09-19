@@ -66,6 +66,8 @@ class RestroomOut(RestroomBase):
     code: str
     created_at: datetime
     updated_at: datetime
+    merged_into_id: int | None = None
+    merged_at: datetime | None = None
 
 
 class RestroomDetail(RestroomOut):
@@ -77,3 +79,4 @@ class RestroomDetail(RestroomOut):
     avg_score: float | None = None
     open_issue_count: int = 0
     total_issue_count: int = 0
+    merged_into: RestroomBrief | None = None

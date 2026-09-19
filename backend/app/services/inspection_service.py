@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.constants import RestroomStatus
 from app.core.exceptions import DomainError, NotFoundError
 from app.models import Inspection, Restroom
 from app.schemas.inspection import InspectionCreate, InspectionOut, InspectionUpdate
@@ -101,7 +102,8 @@ def list_inspections(
 
 
 def create_inspection(db: Session, payload: InspectionCreate) -> Inspection:
-    restroom_service.get_restroom(db, payload.restroom_id)
+    # 加行锁：与合并/拆分执行互斥，撤并后的公厕拒绝提交并引导到承接方
+    restroom_service.require_active_restroom(db, payload.restroom_id)
     items = _normalize_items(payload.items)
     score, grade, result = scoring.evaluate(items)
     inspection = Inspection(
@@ -116,9 +118,9 @@ def create_inspection(db: Session, payload: InspectionCreate) -> Inspection:
         remark=payload.remark,
     )
     db.add(inspection)
+    restroom_service.touch(db, payload.restroom_id)
     db.commit()
     db.refresh(inspection)
-    restroom_service.touch(db, payload.restroom_id)
     return inspection
 
 
@@ -152,7 +154,11 @@ def delete_inspection(db: Session, inspection_id: int) -> None:
 
 
 def restroom_options(db: Session, keyword: str | None = None, limit: int = 50) -> list[Restroom]:
-    stmt = select(Restroom).order_by(Restroom.code)
+    stmt = (
+        select(Restroom)
+        .where(Restroom.status != RestroomStatus.MERGED.value)
+        .order_by(Restroom.code)
+    )
     if keyword:
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(Restroom.name.like(like), Restroom.code.like(like)))

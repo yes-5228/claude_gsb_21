@@ -10,6 +10,8 @@ from app.core.constants import (
     INSPECTION_CHECK_ITEMS,
     INSPECTION_ITEM_MAX_SCORE,
     ISSUE_TRANSITIONS,
+    ChangeOrderStatus,
+    ChangeType,
     IssueCategory,
     IssueSeverity,
     IssueStatus,
@@ -40,6 +42,11 @@ class Dictionaries(BaseModel):
     inspection_check_items: list[str]
     inspection_item_max_score: int
     issue_transitions: dict[str, list[str]]
+    change_type: list[dict]
+    change_status: list[str]
+
+
+CHANGE_TYPE_LABELS = {ChangeType.MERGE: "合并", ChangeType.SPLIT: "拆分"}
 
 
 @router.get("/dictionaries", response_model=Dictionaries, summary="枚举字典")
@@ -54,6 +61,10 @@ def get_dictionaries() -> Dictionaries:
         inspection_check_items=list(INSPECTION_CHECK_ITEMS),
         inspection_item_max_score=INSPECTION_ITEM_MAX_SCORE,
         issue_transitions={key: list(value) for key, value in ISSUE_TRANSITIONS.items()},
+        change_type=[
+            {"value": item.value, "label": CHANGE_TYPE_LABELS[item]} for item in ChangeType
+        ],
+        change_status=[item.value for item in ChangeOrderStatus],
     )
 
 

@@ -80,3 +80,5 @@ class IssueOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     records: list[RectificationRecordOut] = Field(default_factory=list)
+    origin_restroom_id: int | None = None
+    origin_restroom_code: str | None = None
